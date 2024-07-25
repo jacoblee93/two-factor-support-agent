@@ -1,5 +1,5 @@
 {
-  "name": "authorized-support-agent",
+  "name": "two-factor-support-agent",
   "version": "0.0.0",
   "private": true,
   "scripts": {
@@ -18,7 +18,7 @@
   },
   "dependencies": {
     "@langchain/anthropic": "^0.2.9",
-    "@langchain/cloudflare": "0.0.7-rc.0",
+    "@langchain/cloudflare": "0.0.7",
     "@langchain/langgraph": "^0.0.31",
     "langsmith": "^0.1.39",
     "zod": "^3.23.8"

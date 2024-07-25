@@ -1,4 +1,4 @@
-# Agent with two-factor authorization
+# Agent with two-factor auth
 
 This repo implements an agent, modeled after a customer support rep, with two sets of tools:
 
