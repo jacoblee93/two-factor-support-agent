@@ -82,7 +82,7 @@ You would then see a run [like this](https://smith.langchain.com/public/e7065249
 
 You can continue the conversation by passing the same thread id with a new question.
 
-`http://localhost:8787/?thread_id=54321&question=my%20name%20is%20jacob%20and%20my%20order%20id%20is%2099999`
+`http://localhost:8787/?thread_id=<SOME THREAD ID>&question=my%20name%20is%20jacob%20and%20my%20order%20id%20is%2099999`
 
 If you followed up with the requested information, you would see a run [like this](https://smith.langchain.com/public/d482a470-d989-4f50-b240-f4888b58f330/r) where the model requires authorization before calling the refund tool:
 
