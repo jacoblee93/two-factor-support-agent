@@ -1,5 +1,5 @@
 {
-  "name": "customer-support-agent",
+  "name": "authorized-support-agent",
   "version": "0.0.0",
   "private": true,
   "scripts": {
@@ -15,5 +15,15 @@
     "typescript": "^5.5.2",
     "vitest": "1.5.0",
     "wrangler": "^3.60.3"
+  },
+  "dependencies": {
+    "@langchain/anthropic": "^0.2.9",
+    "@langchain/cloudflare": "0.0.7-rc.0",
+    "@langchain/langgraph": "^0.0.31",
+    "langsmith": "^0.1.39",
+    "zod": "^3.23.8"
+  },
+  "overrides": {
+    "@langchain/core": "0.2.18"
   }
 }
