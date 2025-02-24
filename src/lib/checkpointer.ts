@@ -75,12 +75,12 @@ export class CloudflareD1Saver extends BaseCheckpointSaver {
     this.isSetup = false;
   }
 
-  protected setup(): void {
+  protected async setup(): Promise<void> {
     if (this.isSetup) {
       return;
     }
 
-    this.db.exec(`
+    await this.db.exec(`
 CREATE TABLE IF NOT EXISTS checkpoints (
   thread_id TEXT NOT NULL,
   checkpoint_ns TEXT NOT NULL DEFAULT '',
@@ -90,8 +90,8 @@ CREATE TABLE IF NOT EXISTS checkpoints (
   checkpoint BLOB,
   metadata BLOB,
   PRIMARY KEY (thread_id, checkpoint_ns, checkpoint_id)
-);`);
-    this.db.exec(`
+);`.split("\n").join(" "));
+    await this.db.exec(`
 CREATE TABLE IF NOT EXISTS writes (
   thread_id TEXT NOT NULL,
   checkpoint_ns TEXT NOT NULL DEFAULT '',
@@ -102,13 +102,13 @@ CREATE TABLE IF NOT EXISTS writes (
   type TEXT,
   value BLOB,
   PRIMARY KEY (thread_id, checkpoint_ns, checkpoint_id, task_id, idx)
-);`);
+);`.split("\n").join(" "));
 
     this.isSetup = true;
   }
 
   async getTuple(config: RunnableConfig): Promise<CheckpointTuple | undefined> {
-    this.setup();
+    await this.setup();
     const {
       thread_id,
       checkpoint_ns = "",
@@ -158,7 +158,7 @@ CREATE TABLE IF NOT EXISTS writes (
         checkpoint_id
           ? "AND checkpoint_id = ?"
           : "ORDER BY checkpoint_id DESC LIMIT 1"
-      }`;
+      }`.split("\n").join(" ");
 
     const args = [thread_id, checkpoint_ns];
     if (checkpoint_id) {
@@ -166,7 +166,7 @@ CREATE TABLE IF NOT EXISTS writes (
     }
     const row = await this.db.prepare(sql).bind(...args).first() as CheckpointRow;
 
-    if (row === undefined) {
+    if (row == null) {
       return undefined;
     }
     let finalConfig = config;
@@ -180,8 +180,8 @@ CREATE TABLE IF NOT EXISTS writes (
       };
     }
     if (
-      finalConfig.configurable?.thread_id === undefined ||
-      finalConfig.configurable?.checkpoint_id === undefined
+      finalConfig.configurable?.thread_id == null ||
+      finalConfig.configurable?.checkpoint_id == null
     ) {
       throw new Error("Missing thread_id or checkpoint_id");
     }
@@ -194,7 +194,7 @@ CREATE TABLE IF NOT EXISTS writes (
             write.channel,
             await this.serde.loadsTyped(
               write.type ?? "json",
-              write.value ?? ""
+              new Uint8Array(write.value as any)
             ),
           ] as [string, string, unknown];
         }
@@ -203,12 +203,12 @@ CREATE TABLE IF NOT EXISTS writes (
 
     const pending_sends = await Promise.all(
       (JSON.parse(row.pending_sends) as PendingSendColumn[]).map((send) =>
-        this.serde.loadsTyped(send.type ?? "json", send.value ?? "")
+        this.serde.loadsTyped(send.type ?? "json", new Uint8Array(send.value as any ?? []))
       )
     );
 
     const checkpoint = {
-      ...(await this.serde.loadsTyped(row.type ?? "json", row.checkpoint)),
+      ...(await this.serde.loadsTyped(row.type ?? "json", new Uint8Array(row.checkpoint as any))),
       pending_sends,
     } as Checkpoint;
 
@@ -217,7 +217,7 @@ CREATE TABLE IF NOT EXISTS writes (
       config: finalConfig,
       metadata: (await this.serde.loadsTyped(
         row.type ?? "json",
-        row.metadata
+        new Uint8Array(row.metadata as any)
       )) as CheckpointMetadata,
       parentConfig: row.parent_checkpoint_id
         ? {
@@ -237,7 +237,7 @@ CREATE TABLE IF NOT EXISTS writes (
     options?: CheckpointListOptions
   ): AsyncGenerator<CheckpointTuple> {
     const { limit, before, filter } = options ?? {};
-    this.setup();
+    await this.setup();
     const thread_id = config.configurable?.thread_id;
     const checkpoint_ns = config.configurable?.checkpoint_ns;
     let sql = `
@@ -279,7 +279,7 @@ CREATE TABLE IF NOT EXISTS writes (
             AND ps.channel = '${TASKS}'
           ORDER BY ps.idx
         ) as pending_sends
-      FROM checkpoints\n`;
+      FROM checkpoints\n`.split("\n").join(" ");
 
     const whereClause: string[] = [];
 
@@ -351,12 +351,12 @@ CREATE TABLE IF NOT EXISTS writes (
 
         const pending_sends = await Promise.all(
           (JSON.parse(row.pending_sends) as PendingSendColumn[]).map((send) =>
-            this.serde.loadsTyped(send.type ?? "json", send.value ?? "")
+            this.serde.loadsTyped(send.type ?? "json", new Uint8Array(send.value as any ?? []))
           )
         );
 
         const checkpoint = {
-          ...(await this.serde.loadsTyped(row.type ?? "json", row.checkpoint)),
+          ...(await this.serde.loadsTyped(row.type ?? "json", new Uint8Array(row.checkpoint as any))),
           pending_sends,
         } as Checkpoint;
 
@@ -371,7 +371,7 @@ CREATE TABLE IF NOT EXISTS writes (
           checkpoint,
           metadata: (await this.serde.loadsTyped(
             row.type ?? "json",
-            row.metadata
+            new Uint8Array(row.metadata as any)
           )) as CheckpointMetadata,
           parentConfig: row.parent_checkpoint_id
             ? {
@@ -393,7 +393,7 @@ CREATE TABLE IF NOT EXISTS writes (
     checkpoint: Checkpoint,
     metadata: CheckpointMetadata
   ): Promise<RunnableConfig> {
-    this.setup();
+    await this.setup();
 
     if (!config.configurable) {
       throw new Error("Empty configuration supplied.");
@@ -428,7 +428,7 @@ CREATE TABLE IF NOT EXISTS writes (
       type1,
       serializedCheckpoint,
       serializedMetadata,
-    ];
+    ].map((row) => row == null ? null : row);
 
     await this.db
       .prepare(
@@ -451,7 +451,7 @@ CREATE TABLE IF NOT EXISTS writes (
     writes: PendingWrite[],
     taskId: string
   ): Promise<void> {
-    this.setup();
+    await this.setup();
 
     if (!config.configurable) {
       throw new Error("Empty configuration supplied.");
@@ -469,7 +469,7 @@ CREATE TABLE IF NOT EXISTS writes (
       INSERT OR REPLACE INTO writes 
       (thread_id, checkpoint_ns, checkpoint_id, task_id, idx, channel, type, value) 
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `);
+    `.split("\n").join(" "));
 
     const rows = writes.map((write, idx) => {
       const [type, serializedWrite] = this.serde.dumpsTyped(write[1]);
@@ -482,7 +482,7 @@ CREATE TABLE IF NOT EXISTS writes (
         write[0],
         type,
         serializedWrite,
-      ];
+      ].map((row) => row == null ? null : row);
     });    
     await this.db.batch([
       ...rows.map((row) => stmt.bind(...row))
