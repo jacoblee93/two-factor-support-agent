@@ -6,12 +6,14 @@
     "deploy": "wrangler deploy",
     "dev": "wrangler dev",
     "start": "wrangler dev",
+    "format": "prettier --config .prettierrc --write \"src\"",
     "test": "vitest",
     "cf-typegen": "wrangler types"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.7.1",
     "@cloudflare/workers-types": "^4.20250214.0",
+    "prettier": "^3.5.2",
     "typescript": "^5.5.2",
     "vitest": "3.0.6",
     "wrangler": "^3.109.2"

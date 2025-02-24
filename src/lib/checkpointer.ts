@@ -1,86 +1,76 @@
-import { D1Database } from "@cloudflare/workers-types";
+import { D1Database } from '@cloudflare/workers-types';
 
-import type { RunnableConfig } from "@langchain/core/runnables";
+import type { RunnableConfig } from '@langchain/core/runnables';
 import {
-  BaseCheckpointSaver,
-  type Checkpoint,
-  type CheckpointListOptions,
-  type CheckpointTuple,
-  type SerializerProtocol,
-  type PendingWrite,
-  type CheckpointMetadata,
-  TASKS,
-  copyCheckpoint,
-} from "@langchain/langgraph-checkpoint";
+	BaseCheckpointSaver,
+	type Checkpoint,
+	type CheckpointListOptions,
+	type CheckpointTuple,
+	type SerializerProtocol,
+	type PendingWrite,
+	type CheckpointMetadata,
+	TASKS,
+	copyCheckpoint,
+} from '@langchain/langgraph-checkpoint';
 
 interface CheckpointRow {
-  checkpoint: string;
-  metadata: string;
-  parent_checkpoint_id?: string;
-  thread_id: string;
-  checkpoint_id: string;
-  checkpoint_ns?: string;
-  type?: string;
-  pending_writes: string;
-  pending_sends: string;
+	checkpoint: string;
+	metadata: string;
+	parent_checkpoint_id?: string;
+	thread_id: string;
+	checkpoint_id: string;
+	checkpoint_ns?: string;
+	type?: string;
+	pending_writes: string;
+	pending_sends: string;
 }
 
 interface PendingWriteColumn {
-  task_id: string;
-  channel: string;
-  type: string;
-  value: string;
+	task_id: string;
+	channel: string;
+	type: string;
+	value: string;
 }
 
 interface PendingSendColumn {
-  type: string;
-  value: string;
+	type: string;
+	value: string;
 }
 
 // In the `SqliteSaver.list` method, we need to sanitize the `options.filter` argument to ensure it only contains keys
 // that are part of the `CheckpointMetadata` type. The lines below ensure that we get compile-time errors if the list
 // of keys that we use is out of sync with the `CheckpointMetadata` type.
-const checkpointMetadataKeys = ["source", "step", "writes", "parents"] as const;
+const checkpointMetadataKeys = ['source', 'step', 'writes', 'parents'] as const;
 
-type CheckKeys<T, K extends readonly (keyof T)[]> = [K[number]] extends [
-  keyof T
-]
-  ? [keyof T] extends [K[number]]
-    ? K
-    : never
-  : never;
+type CheckKeys<T, K extends readonly (keyof T)[]> = [K[number]] extends [keyof T] ? ([keyof T] extends [K[number]] ? K : never) : never;
 
-function validateKeys<T, K extends readonly (keyof T)[]>(
-  keys: CheckKeys<T, K>
-): K {
-  return keys;
+function validateKeys<T, K extends readonly (keyof T)[]>(keys: CheckKeys<T, K>): K {
+	return keys;
 }
 
 // If this line fails to compile, the list of keys that we use in the `SqliteSaver.list` method is out of sync with the
 // `CheckpointMetadata` type. In that case, just update `checkpointMetadataKeys` to contain all the keys in
 // `CheckpointMetadata`
-const validCheckpointMetadataKeys = validateKeys<
-  CheckpointMetadata,
-  typeof checkpointMetadataKeys
->(checkpointMetadataKeys);
+const validCheckpointMetadataKeys = validateKeys<CheckpointMetadata, typeof checkpointMetadataKeys>(checkpointMetadataKeys);
 
 export class CloudflareD1Saver extends BaseCheckpointSaver {
-  db: D1Database;
+	db: D1Database;
 
-  protected isSetup: boolean;
+	protected isSetup: boolean;
 
-  constructor(config: { db: D1Database }, serde?: SerializerProtocol) {
-    super(serde);
-    this.db = config.db;
-    this.isSetup = false;
-  }
+	constructor(config: { db: D1Database }, serde?: SerializerProtocol) {
+		super(serde);
+		this.db = config.db;
+		this.isSetup = false;
+	}
 
-  protected async setup(): Promise<void> {
-    if (this.isSetup) {
-      return;
-    }
+	protected async setup(): Promise<void> {
+		if (this.isSetup) {
+			return;
+		}
 
-    await this.db.exec(`
+		await this.db.exec(
+			`
 CREATE TABLE IF NOT EXISTS checkpoints (
   thread_id TEXT NOT NULL,
   checkpoint_ns TEXT NOT NULL DEFAULT '',
@@ -90,8 +80,12 @@ CREATE TABLE IF NOT EXISTS checkpoints (
   checkpoint BLOB,
   metadata BLOB,
   PRIMARY KEY (thread_id, checkpoint_ns, checkpoint_id)
-);`.split("\n").join(" "));
-    await this.db.exec(`
+);`
+				.split('\n')
+				.join(' '),
+		);
+		await this.db.exec(
+			`
 CREATE TABLE IF NOT EXISTS writes (
   thread_id TEXT NOT NULL,
   checkpoint_ns TEXT NOT NULL DEFAULT '',
@@ -102,19 +96,18 @@ CREATE TABLE IF NOT EXISTS writes (
   type TEXT,
   value BLOB,
   PRIMARY KEY (thread_id, checkpoint_ns, checkpoint_id, task_id, idx)
-);`.split("\n").join(" "));
+);`
+				.split('\n')
+				.join(' '),
+		);
 
-    this.isSetup = true;
-  }
+		this.isSetup = true;
+	}
 
-  async getTuple(config: RunnableConfig): Promise<CheckpointTuple | undefined> {
-    await this.setup();
-    const {
-      thread_id,
-      checkpoint_ns = "",
-      checkpoint_id,
-    } = config.configurable ?? {};
-    const sql = `
+	async getTuple(config: RunnableConfig): Promise<CheckpointTuple | undefined> {
+		await this.setup();
+		const { thread_id, checkpoint_ns = '', checkpoint_id } = config.configurable ?? {};
+		const sql = `
       SELECT
         thread_id,
         checkpoint_ns,
@@ -154,93 +147,80 @@ CREATE TABLE IF NOT EXISTS writes (
           ORDER BY ps.idx
         ) as pending_sends
       FROM checkpoints
-      WHERE thread_id = ? AND checkpoint_ns = ? ${
-        checkpoint_id
-          ? "AND checkpoint_id = ?"
-          : "ORDER BY checkpoint_id DESC LIMIT 1"
-      }`.split("\n").join(" ");
+      WHERE thread_id = ? AND checkpoint_ns = ? ${checkpoint_id ? 'AND checkpoint_id = ?' : 'ORDER BY checkpoint_id DESC LIMIT 1'}`
+			.split('\n')
+			.join(' ');
 
-    const args = [thread_id, checkpoint_ns];
-    if (checkpoint_id) {
-      args.push(checkpoint_id);
-    }
-    const row = await this.db.prepare(sql).bind(...args).first() as CheckpointRow;
+		const args = [thread_id, checkpoint_ns];
+		if (checkpoint_id) {
+			args.push(checkpoint_id);
+		}
+		const row = (await this.db
+			.prepare(sql)
+			.bind(...args)
+			.first()) as CheckpointRow;
 
-    if (row == null) {
-      return undefined;
-    }
-    let finalConfig = config;
-    if (!checkpoint_id) {
-      finalConfig = {
-        configurable: {
-          thread_id: row.thread_id,
-          checkpoint_ns,
-          checkpoint_id: row.checkpoint_id,
-        },
-      };
-    }
-    if (
-      finalConfig.configurable?.thread_id == null ||
-      finalConfig.configurable?.checkpoint_id == null
-    ) {
-      throw new Error("Missing thread_id or checkpoint_id");
-    }
+		if (row == null) {
+			return undefined;
+		}
+		let finalConfig = config;
+		if (!checkpoint_id) {
+			finalConfig = {
+				configurable: {
+					thread_id: row.thread_id,
+					checkpoint_ns,
+					checkpoint_id: row.checkpoint_id,
+				},
+			};
+		}
+		if (finalConfig.configurable?.thread_id == null || finalConfig.configurable?.checkpoint_id == null) {
+			throw new Error('Missing thread_id or checkpoint_id');
+		}
 
-    const pendingWrites = await Promise.all(
-      (JSON.parse(row.pending_writes) as PendingWriteColumn[]).map(
-        async (write) => {
-          return [
-            write.task_id,
-            write.channel,
-            await this.serde.loadsTyped(
-              write.type ?? "json",
-              new Uint8Array(write.value as any)
-            ),
-          ] as [string, string, unknown];
-        }
-      )
-    );
+		const pendingWrites = await Promise.all(
+			(JSON.parse(row.pending_writes) as PendingWriteColumn[]).map(async (write) => {
+				return [write.task_id, write.channel, await this.serde.loadsTyped(write.type ?? 'json', new Uint8Array(write.value as any))] as [
+					string,
+					string,
+					unknown,
+				];
+			}),
+		);
 
-    const pending_sends = await Promise.all(
-      (JSON.parse(row.pending_sends) as PendingSendColumn[]).map((send) =>
-        this.serde.loadsTyped(send.type ?? "json", new Uint8Array(send.value as any ?? []))
-      )
-    );
+		const pending_sends = await Promise.all(
+			(JSON.parse(row.pending_sends) as PendingSendColumn[]).map((send) =>
+				this.serde.loadsTyped(send.type ?? 'json', new Uint8Array((send.value as any) ?? [])),
+			),
+		);
 
-    const checkpoint = {
-      ...(await this.serde.loadsTyped(row.type ?? "json", new Uint8Array(row.checkpoint as any))),
-      pending_sends,
-    } as Checkpoint;
+		const checkpoint = {
+			...(await this.serde.loadsTyped(row.type ?? 'json', new Uint8Array(row.checkpoint as any))),
+			pending_sends,
+		} as Checkpoint;
 
-    return {
-      checkpoint,
-      config: finalConfig,
-      metadata: (await this.serde.loadsTyped(
-        row.type ?? "json",
-        new Uint8Array(row.metadata as any)
-      )) as CheckpointMetadata,
-      parentConfig: row.parent_checkpoint_id
-        ? {
-            configurable: {
-              thread_id: row.thread_id,
-              checkpoint_ns,
-              checkpoint_id: row.parent_checkpoint_id,
-            },
-          }
-        : undefined,
-      pendingWrites,
-    };
-  }
+		return {
+			checkpoint,
+			config: finalConfig,
+			metadata: (await this.serde.loadsTyped(row.type ?? 'json', new Uint8Array(row.metadata as any))) as CheckpointMetadata,
+			parentConfig: row.parent_checkpoint_id
+				? {
+						configurable: {
+							thread_id: row.thread_id,
+							checkpoint_ns,
+							checkpoint_id: row.parent_checkpoint_id,
+						},
+					}
+				: undefined,
+			pendingWrites,
+		};
+	}
 
-  async *list(
-    config: RunnableConfig,
-    options?: CheckpointListOptions
-  ): AsyncGenerator<CheckpointTuple> {
-    const { limit, before, filter } = options ?? {};
-    await this.setup();
-    const thread_id = config.configurable?.thread_id;
-    const checkpoint_ns = config.configurable?.checkpoint_ns;
-    let sql = `
+	async *list(config: RunnableConfig, options?: CheckpointListOptions): AsyncGenerator<CheckpointTuple> {
+		const { limit, before, filter } = options ?? {};
+		await this.setup();
+		const thread_id = config.configurable?.thread_id;
+		const checkpoint_ns = config.configurable?.checkpoint_ns;
+		let sql = `
       SELECT
         thread_id,
         checkpoint_ns,
@@ -279,213 +259,185 @@ CREATE TABLE IF NOT EXISTS writes (
             AND ps.channel = '${TASKS}'
           ORDER BY ps.idx
         ) as pending_sends
-      FROM checkpoints\n`.split("\n").join(" ");
+      FROM checkpoints\n`
+			.split('\n')
+			.join(' ');
 
-    const whereClause: string[] = [];
+		const whereClause: string[] = [];
 
-    if (thread_id) {
-      whereClause.push("thread_id = ?");
-    }
+		if (thread_id) {
+			whereClause.push('thread_id = ?');
+		}
 
-    if (checkpoint_ns !== undefined && checkpoint_ns !== null) {
-      whereClause.push("checkpoint_ns = ?");
-    }
+		if (checkpoint_ns !== undefined && checkpoint_ns !== null) {
+			whereClause.push('checkpoint_ns = ?');
+		}
 
-    if (before?.configurable?.checkpoint_id !== undefined) {
-      whereClause.push("checkpoint_id < ?");
-    }
+		if (before?.configurable?.checkpoint_id !== undefined) {
+			whereClause.push('checkpoint_id < ?');
+		}
 
-    const sanitizedFilter = Object.fromEntries(
-      Object.entries(filter ?? {}).filter(
-        ([key, value]) =>
-          value !== undefined &&
-          validCheckpointMetadataKeys.includes(key as keyof CheckpointMetadata)
-      )
-    );
+		const sanitizedFilter = Object.fromEntries(
+			Object.entries(filter ?? {}).filter(
+				([key, value]) => value !== undefined && validCheckpointMetadataKeys.includes(key as keyof CheckpointMetadata),
+			),
+		);
 
-    whereClause.push(
-      ...Object.entries(sanitizedFilter).map(
-        ([key]) => `jsonb(CAST(metadata AS TEXT))->'$.${key}' = ?`
-      )
-    );
+		whereClause.push(...Object.entries(sanitizedFilter).map(([key]) => `jsonb(CAST(metadata AS TEXT))->'$.${key}' = ?`));
 
-    if (whereClause.length > 0) {
-      sql += `WHERE\n  ${whereClause.join(" AND\n  ")}\n`;
-    }
+		if (whereClause.length > 0) {
+			sql += `WHERE\n  ${whereClause.join(' AND\n  ')}\n`;
+		}
 
-    sql += "\nORDER BY checkpoint_id DESC";
+		sql += '\nORDER BY checkpoint_id DESC';
 
-    if (limit) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      sql += ` LIMIT ${parseInt(limit as any, 10)}`; // parseInt here (with cast to make TS happy) to sanitize input, as limit may be user-provided
-    }
+		if (limit) {
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			sql += ` LIMIT ${parseInt(limit as any, 10)}`; // parseInt here (with cast to make TS happy) to sanitize input, as limit may be user-provided
+		}
 
-    const args = [
-      thread_id,
-      checkpoint_ns,
-      before?.configurable?.checkpoint_id,
-      ...Object.values(sanitizedFilter).map((value) => JSON.stringify(value)),
-    ].filter((value) => value !== undefined && value !== null);
+		const args = [
+			thread_id,
+			checkpoint_ns,
+			before?.configurable?.checkpoint_id,
+			...Object.values(sanitizedFilter).map((value) => JSON.stringify(value)),
+		].filter((value) => value !== undefined && value !== null);
 
-    const res = await this.db
-      .prepare(sql)
-      .bind(...args).all();
-    const rows = res.results as unknown as CheckpointRow[];
+		const res = await this.db
+			.prepare(sql)
+			.bind(...args)
+			.all();
+		const rows = res.results as unknown as CheckpointRow[];
 
-    if (rows) {
-      for (const row of rows) {
-        const pendingWrites = await Promise.all(
-          (JSON.parse(row.pending_writes) as PendingWriteColumn[]).map(
-            async (write) => {
-              return [
-                write.task_id,
-                write.channel,
-                await this.serde.loadsTyped(
-                  write.type ?? "json",
-                  write.value ?? ""
-                ),
-              ] as [string, string, unknown];
-            }
-          )
-        );
+		if (rows) {
+			for (const row of rows) {
+				const pendingWrites = await Promise.all(
+					(JSON.parse(row.pending_writes) as PendingWriteColumn[]).map(async (write) => {
+						return [write.task_id, write.channel, await this.serde.loadsTyped(write.type ?? 'json', write.value ?? '')] as [
+							string,
+							string,
+							unknown,
+						];
+					}),
+				);
 
-        const pending_sends = await Promise.all(
-          (JSON.parse(row.pending_sends) as PendingSendColumn[]).map((send) =>
-            this.serde.loadsTyped(send.type ?? "json", new Uint8Array(send.value as any ?? []))
-          )
-        );
+				const pending_sends = await Promise.all(
+					(JSON.parse(row.pending_sends) as PendingSendColumn[]).map((send) =>
+						this.serde.loadsTyped(send.type ?? 'json', new Uint8Array((send.value as any) ?? [])),
+					),
+				);
 
-        const checkpoint = {
-          ...(await this.serde.loadsTyped(row.type ?? "json", new Uint8Array(row.checkpoint as any))),
-          pending_sends,
-        } as Checkpoint;
+				const checkpoint = {
+					...(await this.serde.loadsTyped(row.type ?? 'json', new Uint8Array(row.checkpoint as any))),
+					pending_sends,
+				} as Checkpoint;
 
-        yield {
-          config: {
-            configurable: {
-              thread_id: row.thread_id,
-              checkpoint_ns: row.checkpoint_ns,
-              checkpoint_id: row.checkpoint_id,
-            },
-          },
-          checkpoint,
-          metadata: (await this.serde.loadsTyped(
-            row.type ?? "json",
-            new Uint8Array(row.metadata as any)
-          )) as CheckpointMetadata,
-          parentConfig: row.parent_checkpoint_id
-            ? {
-                configurable: {
-                  thread_id: row.thread_id,
-                  checkpoint_ns: row.checkpoint_ns,
-                  checkpoint_id: row.parent_checkpoint_id,
-                },
-              }
-            : undefined,
-          pendingWrites,
-        };
-      }
-    }
-  }
+				yield {
+					config: {
+						configurable: {
+							thread_id: row.thread_id,
+							checkpoint_ns: row.checkpoint_ns,
+							checkpoint_id: row.checkpoint_id,
+						},
+					},
+					checkpoint,
+					metadata: (await this.serde.loadsTyped(row.type ?? 'json', new Uint8Array(row.metadata as any))) as CheckpointMetadata,
+					parentConfig: row.parent_checkpoint_id
+						? {
+								configurable: {
+									thread_id: row.thread_id,
+									checkpoint_ns: row.checkpoint_ns,
+									checkpoint_id: row.parent_checkpoint_id,
+								},
+							}
+						: undefined,
+					pendingWrites,
+				};
+			}
+		}
+	}
 
-  async put(
-    config: RunnableConfig,
-    checkpoint: Checkpoint,
-    metadata: CheckpointMetadata
-  ): Promise<RunnableConfig> {
-    await this.setup();
+	async put(config: RunnableConfig, checkpoint: Checkpoint, metadata: CheckpointMetadata): Promise<RunnableConfig> {
+		await this.setup();
 
-    if (!config.configurable) {
-      throw new Error("Empty configuration supplied.");
-    }
+		if (!config.configurable) {
+			throw new Error('Empty configuration supplied.');
+		}
 
-    const thread_id = config.configurable?.thread_id;
-    const checkpoint_ns = config.configurable?.checkpoint_ns ?? "";
-    const parent_checkpoint_id = config.configurable?.checkpoint_id;
+		const thread_id = config.configurable?.thread_id;
+		const checkpoint_ns = config.configurable?.checkpoint_ns ?? '';
+		const parent_checkpoint_id = config.configurable?.checkpoint_id;
 
-    if (!thread_id) {
-      throw new Error(
-        `Missing "thread_id" field in passed "config.configurable".`
-      );
-    }
+		if (!thread_id) {
+			throw new Error(`Missing "thread_id" field in passed "config.configurable".`);
+		}
 
-    const preparedCheckpoint: Partial<Checkpoint> = copyCheckpoint(checkpoint);
-    delete preparedCheckpoint.pending_sends;
+		const preparedCheckpoint: Partial<Checkpoint> = copyCheckpoint(checkpoint);
+		delete preparedCheckpoint.pending_sends;
 
-    const [type1, serializedCheckpoint] =
-      this.serde.dumpsTyped(preparedCheckpoint);
-    const [type2, serializedMetadata] = this.serde.dumpsTyped(metadata);
-    if (type1 !== type2) {
-      throw new Error(
-        "Failed to serialized checkpoint and metadata to the same type."
-      );
-    }
-    const row = [
-      thread_id,
-      checkpoint_ns,
-      checkpoint.id,
-      parent_checkpoint_id,
-      type1,
-      serializedCheckpoint,
-      serializedMetadata,
-    ].map((row) => row == null ? null : row);
+		const [type1, serializedCheckpoint] = this.serde.dumpsTyped(preparedCheckpoint);
+		const [type2, serializedMetadata] = this.serde.dumpsTyped(metadata);
+		if (type1 !== type2) {
+			throw new Error('Failed to serialized checkpoint and metadata to the same type.');
+		}
+		const row = [thread_id, checkpoint_ns, checkpoint.id, parent_checkpoint_id, type1, serializedCheckpoint, serializedMetadata].map(
+			(row) => (row == null ? null : row),
+		);
 
-    await this.db
-      .prepare(
-        `INSERT OR REPLACE INTO checkpoints (thread_id, checkpoint_ns, checkpoint_id, parent_checkpoint_id, type, checkpoint, metadata) VALUES (?, ?, ?, ?, ?, ?, ?)`
-      )
-      .bind(...row)
-      .run();
+		await this.db
+			.prepare(
+				`INSERT OR REPLACE INTO checkpoints (thread_id, checkpoint_ns, checkpoint_id, parent_checkpoint_id, type, checkpoint, metadata) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+			)
+			.bind(...row)
+			.run();
 
-    return {
-      configurable: {
-        thread_id,
-        checkpoint_ns,
-        checkpoint_id: checkpoint.id,
-      },
-    };
-  }
+		return {
+			configurable: {
+				thread_id,
+				checkpoint_ns,
+				checkpoint_id: checkpoint.id,
+			},
+		};
+	}
 
-  async putWrites(
-    config: RunnableConfig,
-    writes: PendingWrite[],
-    taskId: string
-  ): Promise<void> {
-    await this.setup();
+	async putWrites(config: RunnableConfig, writes: PendingWrite[], taskId: string): Promise<void> {
+		await this.setup();
 
-    if (!config.configurable) {
-      throw new Error("Empty configuration supplied.");
-    }
+		if (!config.configurable) {
+			throw new Error('Empty configuration supplied.');
+		}
 
-    if (!config.configurable?.thread_id) {
-      throw new Error("Missing thread_id field in config.configurable.");
-    }
+		if (!config.configurable?.thread_id) {
+			throw new Error('Missing thread_id field in config.configurable.');
+		}
 
-    if (!config.configurable?.checkpoint_id) {
-      throw new Error("Missing checkpoint_id field in config.configurable.");
-    }
+		if (!config.configurable?.checkpoint_id) {
+			throw new Error('Missing checkpoint_id field in config.configurable.');
+		}
 
-    const stmt = this.db.prepare(`
+		const stmt = this.db.prepare(
+			`
       INSERT OR REPLACE INTO writes 
       (thread_id, checkpoint_ns, checkpoint_id, task_id, idx, channel, type, value) 
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `.split("\n").join(" "));
+    `
+				.split('\n')
+				.join(' '),
+		);
 
-    const rows = writes.map((write, idx) => {
-      const [type, serializedWrite] = this.serde.dumpsTyped(write[1]);
-      return [
-        config.configurable?.thread_id,
-        config.configurable?.checkpoint_ns,
-        config.configurable?.checkpoint_id,
-        taskId,
-        idx,
-        write[0],
-        type,
-        serializedWrite,
-      ].map((row) => row == null ? null : row);
-    });    
-    await this.db.batch([
-      ...rows.map((row) => stmt.bind(...row))
-    ]);
-  }
+		const rows = writes.map((write, idx) => {
+			const [type, serializedWrite] = this.serde.dumpsTyped(write[1]);
+			return [
+				config.configurable?.thread_id,
+				config.configurable?.checkpoint_ns,
+				config.configurable?.checkpoint_id,
+				taskId,
+				idx,
+				write[0],
+				type,
+				serializedWrite,
+			].map((row) => (row == null ? null : row));
+		});
+		await this.db.batch([...rows.map((row) => stmt.bind(...row))]);
+	}
 }
