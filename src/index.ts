@@ -12,7 +12,7 @@ import { StateGraph, messagesStateReducer } from "@langchain/langgraph";
 import { Client } from "langsmith";
 import { traceable } from "langsmith/traceable";
 
-import { CloudflareD1Saver } from "@langchain/cloudflare/langgraph/checkpointers";
+import { CloudflareD1Saver } from "./lib/checkpointer.js";
 
 import { technicalSupportTool, orderLookupTool, refundTool } from "./lib/tools";
 import { callTwilio } from "./lib/twilio";
@@ -191,9 +191,7 @@ Instead, you should use the data sources available to resolve the user's problem
       };
     };
 
-    const checkpointer = new CloudflareD1Saver({
-      db: env.DB,
-    });
+    const checkpointer = new CloudflareD1Saver({ db: env.DB });
 
     const app = new StateGraph<AgentState>({ channels: graphState })
       .addNode("support_agent", supportAgent)

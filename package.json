@@ -10,20 +10,17 @@
     "cf-typegen": "wrangler types"
   },
   "devDependencies": {
-    "@cloudflare/vitest-pool-workers": "^0.4.5",
-    "@cloudflare/workers-types": "^4.20240722.0",
+    "@cloudflare/vitest-pool-workers": "^0.7.1",
+    "@cloudflare/workers-types": "^4.20250214.0",
     "typescript": "^5.5.2",
-    "vitest": "1.5.0",
-    "wrangler": "^3.60.3"
+    "vitest": "3.0.6",
+    "wrangler": "^3.109.2"
   },
   "dependencies": {
-    "@langchain/anthropic": "^0.2.9",
-    "@langchain/cloudflare": "0.0.7",
-    "@langchain/langgraph": "^0.0.31",
-    "langsmith": "^0.1.39",
+    "@langchain/anthropic": "^0.3.13",
+    "@langchain/cloudflare": "0.1.0",
+    "@langchain/langgraph": "^0.2.48",
+    "langsmith": "^0.3.10",
     "zod": "^3.23.8"
-  },
-  "overrides": {
-    "@langchain/core": "0.2.18"
   }
 }
